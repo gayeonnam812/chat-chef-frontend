@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import MessageBox from "../components/MessageBox";
 import PrevButton from "../components/PrevButton";
 import { MoonLoader } from "react-spinners";
@@ -6,24 +6,126 @@ import { MoonLoader } from "react-spinners";
 const Chat = ({ingredientList}) => {
   // logic
 
+  const endpoint = process.env.REACT_APP_SERVER_ADDRESS;
+
   const [value, setValue] = useState("");
 
-  console.log(ingredientList);
+  // console.log(ingredientList);
+
 
   // TODO: set함수 추가하기
-  const [messages] = useState([]); // chatGPT와 사용자의 대화 메시지 배열
-  const [isInfoLoading] = useState(false); // 최초 정보 요청시 로딩
-  const [isMessageLoading] = useState(true); // 사용자와 메시지 주고 받을때 로딩
+  const [messages, setMessages] = useState([]); // chatGPT와 사용자의 대화 메시지 
+  
+  // 초기 메시지 배열(systme, user)
+  const [infoMessages, setInfoMessages] = useState([])
+  
+  // 배열
+  const [isInfoLoading, setIsInfoLoading] = useState(true); // 최초 정보 요청시 로딩 -> 전체페이지 로딩
+  const [isMessageLoading, setIsMessageLoading] = useState(false); // 사용자와 메시지 주고 받을때 로딩
+
   const hadleChange = (event) => {
     const { value } = event.target;
-    console.log("value==>", value);
+    // console.log("value==>", value);
     setValue(value);
   };
 
+  const sendMessage = async (userMessage) => {
+    setIsMessageLoading(true);
+    try {
+      const response = await fetch(`${endpoint}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userMessage,
+          messages: [...infoMessages, ...messages],
+        }),
+      });
+
+      const result = await response.json();
+
+      // chatGPT의 답변 추가
+      const { role, content } = result.data;
+      const assistantMessage = { role, content };
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      // console.log("🚀 ~ sendMessage ~ result:", result);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      // try 혹은 error 구문 실행후 실행되는 곳
+      setIsMessageLoading(false);
+    }
+  };
+
+  // 엔터치는 순간
   const hadleSubmit = (event) => {
     event.preventDefault();
-    console.log("메시지 보내기");
+    // console.log("메시지 보내기");
+
+    // /message API 호출
+    const userMessage = {
+      role: "user",
+      content: value.trim()
+    }
+    // console.log("🚀 ~ hadleSubmit ~ userMessage:", userMessage)
+
+    // Message 업데이트
+    setMessages((prev) => [...prev, userMessage]);
+
+    // Message 입력값 초기화
+    setValue("");
+
+    sendMessage(userMessage);
   };
+
+  // 초기 세팅 API 호출
+  const sendInfo = async (data) => {
+    setIsInfoLoading(true);
+    try {
+      // 백엔드 /recipe API 호출
+      const response = await fetch(`${endpoint}/recipe`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          ingredientList: data
+        })
+      });
+
+      // json -> 데이터형태인 객체로 변환
+      const result = await response.json();
+      // console.log("🚀 ~ sendInfo ~ result:", result)
+
+      if(!result.data) return;
+
+      // 마지막 요소 제거된 메시지 배열
+      const removeLastDataList = result.data.filter((_, index, array) => array.length-1 !== index)
+      
+      // 초기 메시지 배열에 추가
+      setInfoMessages(removeLastDataList);
+
+      // 첫 assistant답변 UI에 추가
+      const { role, content } = result.data[result.data.length - 1];
+      // prev: 배열
+      setMessages((prev) => [...prev, { role, content }]);
+      
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsInfoLoading(false);
+    }
+  };
+
+  // 특정 state의 변경을 감지하여 특정 로직을 수행할수 있게 도와주는 함수
+  useEffect(() => {
+    sendInfo(ingredientList)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    // console.log("🚀 ~ Chat ~ infoMessages:", infoMessages)
+  }, [infoMessages])
+
+
 
   // view
   return (
